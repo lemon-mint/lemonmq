@@ -1,10 +1,11 @@
 package lemonmq
 
+//go:generate protoc -I=packetpb --go_out=. packetpb/*.proto
+
 import (
 	"log"
 	"net"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/lemon-mint/frameio"
@@ -13,12 +14,6 @@ import (
 	"github.com/valyala/bytebufferpool"
 	"google.golang.org/protobuf/proto"
 )
-
-var msgPool = sync.Pool{
-	New: func() interface{} {
-		return &types.Message{}
-	},
-}
 
 func (s *Server) handleConn(c net.Conn) {
 	var err error
@@ -33,17 +28,49 @@ func (s *Server) handleConn(c net.Conn) {
 	buffer := bytebufferpool.Get()
 	defer bytebufferpool.Put(buffer)
 	var topics []string
-	_ = r
-	_ = w
 	var data []byte
 	var p packetpb.Packet
+
 	defer func() {
 		for _, topic := range topics {
 			s.Unsubscribe(topic, ch)
 		}
+		close(ch)
 	}()
+
+	go func() {
+		for {
+			msg, ok := <-ch
+			if !ok {
+				return
+			}
+			var pbm packetpb.Message
+			pbm.Topic = msg.Topic
+			pbm.Id = msg.ID
+			pbm.Payload = msg.Body
+			pbm.Timestamp = msg.TimeStamp
+
+			data, err := proto.Marshal(&pbm)
+			if err != nil {
+				ConnError(c, err)
+				return
+			}
+
+			err = c.SetWriteDeadline(time.Now().Add(s.ConnTimeout))
+			if err != nil {
+				ConnError(c, "SetWriteDeadline", err)
+				return
+			}
+			err = w.Write(data)
+			if err != nil {
+				ConnError(c, err)
+				return
+			}
+		}
+	}()
+
 	for {
-		err = c.SetReadDeadline(time.Now().Add(s.ReadTimeout))
+		err = c.SetReadDeadline(time.Now().Add(s.ConnTimeout))
 		if err != nil {
 			ConnError(c, "SetReadDeadline", err)
 			return
@@ -64,7 +91,7 @@ func (s *Server) handleConn(c net.Conn) {
 			if pub == nil {
 				return
 			}
-			msg := msgPool.Get().(*types.Message)
+			msg := new(types.Message)
 			msg.Topic = pub.GetTopic()
 			msg.Body = pub.GetPayload()
 			msg.TimeStamp = time.Now().UnixNano()

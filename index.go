@@ -17,7 +17,7 @@ type Server struct {
 
 	msgq *ringbuffer.RingBuffer
 
-	ReadTimeout time.Duration
+	ConnTimeout time.Duration
 }
 
 func NewServer() *Server {

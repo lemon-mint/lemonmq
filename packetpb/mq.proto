@@ -27,3 +27,11 @@ message Packet {
     optional Unsubscribe unsubscribe = 3;
     optional Publish publish = 4;
 }
+
+message Message {
+    string topic = 1;
+    int64 timestamp = 2;
+    string id = 3;
+
+    bytes payload = 4;
+}
