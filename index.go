@@ -2,6 +2,7 @@ package lemonmq
 
 import (
 	"net"
+	"time"
 
 	"github.com/lemon-mint/lemonmq/ringbuffer"
 	"github.com/lemon-mint/lemonmq/slowtable"
@@ -14,9 +15,9 @@ type Server struct {
 
 	Topic *slowtable.Table
 
-	handleConn func(net.Conn)
-
 	msgq *ringbuffer.RingBuffer
+
+	ReadTimeout time.Duration
 }
 
 func NewServer() *Server {
@@ -42,7 +43,7 @@ func (s *Server) Close() {
 	s.ln.Close()
 }
 
-func (s *Server) Subscribe(topic string) chan *types.Message {
+func (s *Server) Subscribe(topic string, ch chan *types.Message) chan *types.Message {
 retry:
 	t, ok := s.Topic.GetS(topic)
 	if !ok {
@@ -54,9 +55,16 @@ retry:
 		goto retry
 	}
 
-	ch := make(chan *types.Message, 5)
 	t.Subscribe(ch)
 	return ch
+}
+
+func (s *Server) Unsubscribe(topic string, ch chan *types.Message) {
+	t, ok := s.Topic.GetS(topic)
+	if !ok {
+		return
+	}
+	t.Unsubscribe(ch)
 }
 
 func (s *Server) DirectPublish(topic string, msg *types.Message) {

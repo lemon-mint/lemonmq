@@ -1,0 +1,29 @@
+syntax = "proto3";
+package packetpb;
+
+option go_package = "./packetpb";
+
+message Subscribe {
+    string topic = 1;
+}
+
+message Unsubscribe {
+    string topic = 1;
+}
+
+message Publish {
+    string topic = 1;
+    bytes payload = 2;
+}
+
+message Packet {
+    enum PacketType {
+        SUB = 0;
+        UNSUB = 1;
+        PUB = 2;
+    }
+    PacketType type = 1;
+    optional Subscribe subscribe = 2;
+    optional Unsubscribe unsubscribe = 3;
+    optional Publish publish = 4;
+}
