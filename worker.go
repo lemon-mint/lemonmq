@@ -115,6 +115,8 @@ func (s *Server) handleConn(c net.Conn) {
 					break
 				}
 			}
+		case packetpb.Packet_HEARTBEAT:
+			// Heartbeat
 		}
 	}
 }

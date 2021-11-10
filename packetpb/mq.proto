@@ -21,6 +21,8 @@ message Packet {
         SUB = 0;
         UNSUB = 1;
         PUB = 2;
+
+        HEARTBEAT = 3;
     }
     PacketType type = 1;
     optional Subscribe subscribe = 2;
