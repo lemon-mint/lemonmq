@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/lemon-mint/frameio"
@@ -16,6 +17,7 @@ import (
 )
 
 func (s *Server) handleConn(c net.Conn) {
+	defer atomic.AddInt64(&s.clients, -1)
 	var err error
 	defer c.Close()
 	bufr := frameio.BufioPool.GetReader(c)
@@ -41,16 +43,22 @@ func (s *Server) handleConn(c net.Conn) {
 	go func() {
 		for {
 			msg, ok := <-ch
+			var pbm packetpb.Message
 			if !ok {
 				return
+			} else {
+				if msg.T == types.MSG_SERVER_DRAIN {
+					pbm.Type = packetpb.Message_SERVER_DRAIN
+				} else {
+					pbm.Type = packetpb.Message_NORMAL
+				}
+				pbm.Topic = msg.Topic
+				pbm.Id = msg.ID
+				pbm.Payload = msg.Body
+				pbm.Timestamp = msg.TimeStamp
 			}
-			var pbm packetpb.Message
-			pbm.Topic = msg.Topic
-			pbm.Id = msg.ID
-			pbm.Payload = msg.Body
-			pbm.Timestamp = msg.TimeStamp
 
-			data, err := proto.Marshal(&pbm)
+			protoData, err := proto.Marshal(&pbm)
 			if err != nil {
 				ConnError(c, err)
 				return
@@ -61,7 +69,7 @@ func (s *Server) handleConn(c net.Conn) {
 				ConnError(c, "SetWriteDeadline", err)
 				return
 			}
-			err = w.Write(data)
+			err = w.Write(protoData)
 			if err != nil {
 				ConnError(c, err)
 				return
@@ -75,7 +83,8 @@ func (s *Server) handleConn(c net.Conn) {
 			ConnError(c, "SetReadDeadline", err)
 			return
 		}
-		data, err = r.Read()
+		err = r.ReadToBuffer(buffer)
+		data = buffer.Bytes()
 		if err != nil {
 			ConnError(c, "Read", err)
 			return
@@ -95,6 +104,7 @@ func (s *Server) handleConn(c net.Conn) {
 			msg.Topic = pub.GetTopic()
 			msg.Body = pub.GetPayload()
 			msg.TimeStamp = time.Now().UnixNano()
+			msg.T = types.MSG_NORMAL
 			s.Publish(pub.GetTopic(), msg)
 		case packetpb.Packet_SUB:
 			sub := p.GetSubscribe()
@@ -118,6 +128,8 @@ func (s *Server) handleConn(c net.Conn) {
 		case packetpb.Packet_HEARTBEAT:
 			// Heartbeat
 		}
+
+		buffer.Reset()
 	}
 }
 
