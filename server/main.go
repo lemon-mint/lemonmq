@@ -8,7 +8,7 @@ import (
 
 func main() {
 	server := lemonmq.NewServer(0)
-	ln, err := net.Listen("tcp", ":5555")
+	ln, err := net.Listen("tcp", ":9999")
 	if err != nil {
 		panic(err)
 	}
