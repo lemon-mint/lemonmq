@@ -13,7 +13,7 @@ type Client struct {
 
 	endpoint string
 
-	mu    sync.RWMutex
+	mu    sync.Mutex
 	cache map[string][]string
 
 	conns map[string]*Conn
@@ -31,22 +31,16 @@ func NewClient(endpoint string) *Client {
 
 func (c *Client) Subscribe(topic string, f func(m *types.Message) (Unsubscribe bool)) error {
 	// BEGIN TODO: get addr from endpoint
-	c.mu.RLock()
+	c.mu.Lock()
 	addr, ok := c.cache[topic]
-	c.mu.RUnlock()
 	if !ok {
-		c.mu.Lock()
 		addr = []string{c.endpoint}
 		c.cache[topic] = addr
-		c.mu.Unlock()
 	}
 	// END TODO
 
-	c.mu.RLock()
 	conn, ok := c.conns[addr[0]]
-	c.mu.RUnlock()
 	if !ok {
-		c.mu.Lock()
 		conn = &Conn{}
 		err := conn.Init(addr[0], c.subscriptions)
 		if err != nil {
@@ -54,8 +48,8 @@ func (c *Client) Subscribe(topic string, f func(m *types.Message) (Unsubscribe b
 			return err
 		}
 		c.conns[addr[0]] = conn
-		c.mu.Unlock()
 	}
+	c.mu.Unlock()
 	conn.Poll()
 
 retry:
