@@ -61,5 +61,32 @@ retry:
 		goto retry
 	}
 	t.Subscribe(f)
+	conn.Subscribe(topic)
 	return nil
+}
+
+func (c *Client) GetPublishStream(topic string) (func(payload []byte), error) {
+	// BEGIN TODO: get addr from endpoint
+	c.mu.Lock()
+	addr, ok := c.cache[topic]
+	if !ok {
+		addr = []string{c.endpoint}
+		c.cache[topic] = addr
+	}
+	// END TODO
+
+	conn, ok := c.conns[addr[0]]
+	if !ok {
+		conn = &Conn{}
+		err := conn.Init(addr[0], c.subscriptions)
+		if err != nil {
+			c.mu.Unlock()
+			return nil, err
+		}
+		c.conns[addr[0]] = conn
+	}
+	c.mu.Unlock()
+	return func(payload []byte) {
+		conn.Publish(topic, payload)
+	}, nil
 }

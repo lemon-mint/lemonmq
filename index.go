@@ -125,6 +125,7 @@ func (s *Server) DirectPublish(topic string, msg *types.Message) {
 
 func (s *Server) Publish(topic string, msg *types.Message) {
 	atomic.AddInt64(&s.queued, 1)
+	atomic.AddInt64(&s.rpsCounter, 1)
 	s.msgq.EnQueue(msg)
 }
 
@@ -146,7 +147,7 @@ func (s *Server) rpsc() {
 	for {
 		select {
 		case <-ticker.C:
-			s.rps = float64(atomic.SwapInt64(&s.rpsCounter, 0)) / float64(time.Second*10)
+			s.rps = float64(atomic.SwapInt64(&s.rpsCounter, 0)) / 10
 			atomic.StoreInt64(&s.rpsCounter, 0)
 			log.Printf("rps: %f, queued: %d, delivered: %d, clients: %d", s.rps, atomic.LoadInt64(&s.queued), atomic.LoadInt64(&s.delivered), atomic.LoadInt64(&s.clients))
 		case <-s.rpsStopChan:

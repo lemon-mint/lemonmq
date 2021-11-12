@@ -40,7 +40,12 @@ func (s *Server) handleConn(c net.Conn) {
 		close(ch)
 	}()
 
+	chStop := make(chan struct{})
+
 	go func() {
+		defer func() {
+			chStop <- struct{}{}
+		}()
 		for {
 			msg, ok := <-ch
 			var pbm packetpb.Message
@@ -82,64 +87,71 @@ func (s *Server) handleConn(c net.Conn) {
 		}
 	}()
 
-	for {
-		err = c.SetReadDeadline(time.Now().Add(s.ConnTimeout))
-		if err != nil {
-			ConnError(c, "SetReadDeadline", err)
-			return
-		}
-		err = r.ReadToBuffer(buffer)
-		data = buffer.Bytes()
-		if err != nil {
-			ConnError(c, "Read", err)
-			return
-		}
-		err = proto.Unmarshal(data, &p)
-		if err != nil {
-			ConnError(c, "Unmarshal", err)
-			return
-		}
-		switch p.GetType() {
-		case packetpb.Packet_PUB:
-			pub := p.GetPublish()
-			if pub == nil {
+	go func() {
+		defer func() {
+			chStop <- struct{}{}
+		}()
+		for {
+			err = c.SetReadDeadline(time.Now().Add(s.ConnTimeout))
+			if err != nil {
+				ConnError(c, "SetReadDeadline", err)
 				return
 			}
-			msg := new(types.Message)
-			msg.Topic = pub.GetTopic()
-			msg.Body = pub.GetPayload()
-			msg.TimeStamp = time.Now().UnixNano()
-			msg.T = types.MSG_NORMAL
-			s.Publish(pub.GetTopic(), msg)
-		case packetpb.Packet_SUB:
-			sub := p.GetSubscribe()
-			if sub == nil {
+			err = r.ReadToBuffer(buffer)
+			data = buffer.Bytes()
+			if err != nil {
+				ConnError(c, "Read", err)
 				return
 			}
-			s.Subscribe(sub.GetTopic(), ch)
-			topics = append(topics, sub.GetTopic())
-		case packetpb.Packet_UNSUB:
-			unsub := p.GetUnsubscribe()
-			if unsub == nil {
+			err = proto.Unmarshal(data, &p)
+			if err != nil {
+				ConnError(c, "Unmarshal", err)
 				return
 			}
-			s.Unsubscribe(unsub.GetTopic(), ch)
-			for i, t := range topics {
-				if t == unsub.Topic {
-					topics = append(topics[:i], topics[i+1:]...)
-					break
+			switch p.GetType() {
+			case packetpb.Packet_PUB:
+				pub := p.GetPublish()
+				if pub == nil {
+					return
 				}
+				msg := new(types.Message)
+				msg.Topic = pub.GetTopic()
+				msg.Body = pub.GetPayload()
+				msg.TimeStamp = time.Now().UnixNano()
+				msg.T = types.MSG_NORMAL
+				s.Publish(pub.GetTopic(), msg)
+			case packetpb.Packet_SUB:
+				sub := p.GetSubscribe()
+				if sub == nil {
+					return
+				}
+				s.Subscribe(sub.GetTopic(), ch)
+				topics = append(topics, sub.GetTopic())
+			case packetpb.Packet_UNSUB:
+				unsub := p.GetUnsubscribe()
+				if unsub == nil {
+					return
+				}
+				s.Unsubscribe(unsub.GetTopic(), ch)
+				for i, t := range topics {
+					if t == unsub.Topic {
+						topics = append(topics[:i], topics[i+1:]...)
+						break
+					}
+				}
+			case packetpb.Packet_HEARTBEAT:
+				// Heartbeat
 			}
-		case packetpb.Packet_HEARTBEAT:
-			// Heartbeat
-		}
 
-		buffer.Reset()
-	}
+			buffer.Reset()
+		}
+	}()
+	<-chStop
 }
 
-var logError = log.New(os.Stderr, "Error", log.Flags())
+var logError = log.New(os.Stderr, "[Error] ", log.Flags())
 
 func ConnError(c net.Conn, data ...interface{}) {
 	logError.Println(c.RemoteAddr(), data)
+	c.Close()
 }

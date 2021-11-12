@@ -29,6 +29,10 @@ type Conn struct {
 	heartbeatStop chan struct{}
 
 	mu sync.Mutex
+
+	upstreamQueue chan *packetpb.Packet
+
+	topicCache map[string]struct{}
 }
 
 func (c *Conn) Init(addr string, upstream *slowtable.Table) error {
@@ -46,10 +50,11 @@ func (c *Conn) Init(addr string, upstream *slowtable.Table) error {
 
 	c.fr = frameio.NewFrameReader(c.r)
 	c.fw = frameio.NewFrameWriter(c.w)
+	c.upstreamQueue = make(chan *packetpb.Packet, 1024)
+	c.heartbeatStop = make(chan struct{})
+	c.topicCache = make(map[string]struct{})
 
 	c.upstream = upstream
-
-	c.heartbeatStop = make(chan struct{})
 
 	go func() {
 		t := time.NewTicker(time.Second * 5)
@@ -64,27 +69,31 @@ func (c *Conn) Init(addr string, upstream *slowtable.Table) error {
 		}
 	}()
 
+	go c.writeWorker()
+
 	return nil
+}
+
+func (c *Conn) writeWorker() {
+	for msg := range c.upstreamQueue {
+		payload, err := proto.Marshal(msg)
+		if err != nil {
+			c.Close()
+			return
+		}
+		err = c.fw.Write(payload)
+		if err != nil {
+			c.Close()
+			return
+		}
+	}
 }
 
 func (c *Conn) Ping() {
 	p := packetpb.Packet{
 		Type: packetpb.Packet_HEARTBEAT,
 	}
-	data, err := proto.Marshal(&p)
-	if err != nil {
-		return
-	}
-	err = c.fw.Write(data)
-	if err != nil {
-		c.Close()
-		return
-	}
-	err = c.w.Flush()
-	if err != nil {
-		c.Close()
-		return
-	}
+	c.upstreamQueue <- &p
 }
 
 func (c *Conn) Poll() {
@@ -124,8 +133,28 @@ func (c *Conn) Poll() {
 	}()
 }
 
+func (c *Conn) Publish(topic string, payload []byte) {
+	p := packetpb.Packet{
+		Type: packetpb.Packet_PUB,
+	}
+	p.Publish = &packetpb.Publish{}
+	p.Publish.Topic = topic
+	p.Publish.Payload = payload
+	c.upstreamQueue <- &p
+}
+
+func (c *Conn) Subscribe(topic string) {
+	p := packetpb.Packet{
+		Type: packetpb.Packet_SUB,
+	}
+	p.Subscribe = &packetpb.Subscribe{}
+	p.Subscribe.Topic = topic
+	c.upstreamQueue <- &p
+}
+
 func (c *Conn) Close() error {
 	c.heartbeatStop <- struct{}{}
+	close(c.upstreamQueue)
 	c.mu.Lock()
 	err := c.conn.Close()
 	defer c.mu.Unlock()
