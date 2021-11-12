@@ -1,6 +1,7 @@
 package lemonmq
 
 import (
+	"log"
 	"net"
 	"runtime"
 	"sync/atomic"
@@ -147,7 +148,9 @@ func (s *Server) rpsc() {
 		case <-ticker.C:
 			s.rps = float64(atomic.SwapInt64(&s.rpsCounter, 0)) / float64(time.Second*10)
 			atomic.StoreInt64(&s.rpsCounter, 0)
+			log.Printf("rps: %f, queued: %d, delivered: %d, clients: %d", s.rps, atomic.LoadInt64(&s.queued), atomic.LoadInt64(&s.delivered), atomic.LoadInt64(&s.clients))
 		case <-s.rpsStopChan:
+			ticker.Stop()
 			return
 		}
 	}

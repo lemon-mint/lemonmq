@@ -74,6 +74,11 @@ func (s *Server) handleConn(c net.Conn) {
 				ConnError(c, err)
 				return
 			}
+			err = bufw.Flush()
+			if err != nil {
+				ConnError(c, err)
+				return
+			}
 		}
 	}()
 

@@ -5,8 +5,8 @@ import (
 	"sync"
 
 	"github.com/bytedance/gopkg/util/xxhash3"
+	"github.com/lemon-mint/lemonmq/client/types"
 	"github.com/lemon-mint/lemonmq/slowtable/nocopy"
-	"github.com/lemon-mint/lemonmq/types"
 )
 
 // NewTable : Create a new table
@@ -49,7 +49,7 @@ func (t *Table) putitem(i *item) {
 
 // Set : Set the value for the given key
 // Thread safe
-func (t *Table) Set(key []byte, val *types.Chan) {
+func (t *Table) Set(key []byte, val *types.Topic) {
 	hash := t.hash(key) % t.keysize
 	t.entries[hash].mu.Lock()
 	defer t.entries[hash].mu.Unlock()
@@ -83,7 +83,7 @@ func (t *Table) Set(key []byte, val *types.Chan) {
 
 // Get : Get the value for the given key
 // Thread safe
-func (t *Table) Get(key []byte) (*types.Chan, bool) {
+func (t *Table) Get(key []byte) (*types.Topic, bool) {
 	hash := t.hash(key) % t.keysize
 	t.entries[hash].mu.RLock()
 	defer t.entries[hash].mu.RUnlock()
@@ -106,7 +106,7 @@ func (t *Table) Get(key []byte) (*types.Chan, bool) {
 	}
 }
 
-func (t *Table) CompareAndSwap(key []byte, old, new *types.Chan) bool {
+func (t *Table) CompareAndSwap(key []byte, old, new *types.Topic) bool {
 	hash := t.hash(key) % t.keysize
 	t.entries[hash].mu.Lock()
 	defer t.entries[hash].mu.Unlock()
@@ -192,13 +192,13 @@ func (t *Table) Exists(key []byte) bool {
 
 // GetS : Get the value for the given key(String)
 // Thread safe
-func (t *Table) GetS(key string) (*types.Chan, bool) {
+func (t *Table) GetS(key string) (*types.Topic, bool) {
 	return t.Get(nocopy.S2B(key))
 }
 
 // SetS : Set the value for the given key(String)
 // Thread safe
-func (t *Table) SetS(key string, val *types.Chan) {
+func (t *Table) SetS(key string, val *types.Topic) {
 	t.Set(nocopy.S2B(key), val)
 }
 
